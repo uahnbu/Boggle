@@ -1,0 +1,34 @@
+{
+  "name": "word-rush-multiplayer-boggle",
+  "version": "1.0.0",
+  "description": "Real-time Multiplayer Word Rush / Boggle with Curated Academic Vocabulary",
+  "scripts": {
+    "start": "cd backend && npx tsx src/server.ts",
+    "dev": "cd backend && npx tsx watch src/server.ts",
+    "dev:backend": "cd backend && npx tsx watch src/server.ts",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build:frontend": "cd frontend && npm run build",
+    "build": "npm run build:frontend",
+    "host": "node scripts/host-public.mjs",
+    "host:cf": "node scripts/host-public.mjs --cf",
+    "host:lhr": "node scripts/host-public.mjs --lhr",
+    "host:lt": "node scripts/host-public.mjs --lt",
+    "test:solver": "npx tsx test_solver.ts",
+    "test:multiplayer": "cd backend && npx tsx test_multiplayer.ts",
+    "test": "npm run test:solver && npm run test:multiplayer"
+  },
+  "devDependencies": {
+    "localtunnel": "^2.0.2"
+  },
+  "keywords": [
+    "boggle",
+    "multiplayer",
+    "word-game",
+    "vocabulary",
+    "socketio",
+    "react",
+    "realtime"
+  ],
+  "author": "Antigravity",
+  "license": "MIT"
+}
