@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useSocket } from './hooks/useSocket';
 import { useSwipe } from './hooks/useSwipe';
 import { useDictionary } from './hooks/useDictionary';
@@ -11,18 +11,12 @@ import { LiveFeed } from './components/LiveFeed';
 import { RoomLobby } from './components/RoomLobby';
 import { ResultsModal } from './components/ResultsModal';
 import { WelcomeScreen } from './components/WelcomeScreen';
-import { CelebrationOverlay, CelebrationEvent } from './components/CelebrationOverlay';
-import { MouseAvatar } from './components/MouseAvatar';
 
 export const App: React.FC = () => {
   const socket = useSocket();
   const dictionary = useDictionary();
   const [initialRoomParam, setInitialRoomParam] = useState<string | null>(null);
-
-  // Celebration & Streak state
-  const [celebration, setCelebration] = useState<CelebrationEvent | null>(null);
   const [lastPlayedWord, setLastPlayedWord] = useState<LastPlayedWordInfo | null>(null);
-  const wordTimestampsRef = useRef<number[]>([]);
 
   // Check URL query parameters on load
   useEffect(() => {
@@ -50,31 +44,6 @@ export const App: React.FC = () => {
           reason,
           timestamp: Date.now(),
         });
-
-        if (valid) {
-          const now = Date.now();
-          // Filter to timestamps in last 14 seconds
-          const recent = wordTimestampsRef.current.filter((t) => now - t <= 14000);
-          recent.push(now);
-          wordTimestampsRef.current = recent;
-
-          // Trigger streak if 3 or more words in short window
-          if (recent.length >= 3) {
-            setCelebration({
-              id: `streak-${now}`,
-              type: 'streak',
-              word: playedWord,
-              streakCount: recent.length,
-            });
-          } else if (playedWord.length >= 6) {
-            setCelebration({
-              id: `long-${now}`,
-              type: 'long-word',
-              word: playedWord,
-              length: playedWord.length,
-            });
-          }
-        }
       });
     },
     [socket]
@@ -84,7 +53,6 @@ export const App: React.FC = () => {
   const {
     path,
     currentWord,
-    isSwiping,
     currentPointer,
     handlePointerDown,
     handlePointerMove,
@@ -103,12 +71,6 @@ export const App: React.FC = () => {
   if (!socket.roomCode) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-[#FF6B00] via-[#FF2E93] to-[#7928CA] flex flex-col justify-center">
-        {/* Pointer follower avatar badge */}
-        <MouseAvatar
-          avatar={socket.myPlayer?.avatar || '🦊'}
-          color={socket.myPlayer?.color || '#FF7A00'}
-          isSwiping={isSwiping}
-        />
         <WelcomeScreen
           onCreateRoom={(username, avatar, color) => socket.createRoom(username, avatar, color)}
           onJoinRoom={(code, username, avatar, color, onError) =>
@@ -126,16 +88,6 @@ export const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#FF6B00] via-[#FF2E93] to-[#7928CA] flex flex-col justify-between">
-      {/* Pointer follower avatar badge */}
-      <MouseAvatar
-        avatar={socket.myPlayer?.avatar || '🦊'}
-        color={socket.myPlayer?.color || '#FF7A00'}
-        isSwiping={isSwiping}
-      />
-
-      {/* Dynamic Celebration / Streak / Mascot Overlay */}
-      <CelebrationOverlay event={celebration} onClear={() => setCelebration(null)} />
-
       {/* Top Application Header */}
       <Header
         roomCode={socket.roomCode}
@@ -186,11 +138,12 @@ export const App: React.FC = () => {
                 lastPlayedWord={lastPlayedWord}
               />
 
-              {/* The Interactive Boggle Grid */}
+              {/* The Interactive Boggle Grid with 30s Ghost Hint Trail */}
               <Board
                 board={socket.board}
                 path={path}
                 currentPointer={currentPointer}
+                ghostHint={socket.ghostHint}
                 onPointerDown={handlePointerDown}
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
@@ -213,6 +166,8 @@ export const App: React.FC = () => {
             results={socket.roundResults}
             currentPlayerId={socket.playerId}
             isHost={socket.isHost}
+            raceSpeed={socket.raceSpeed}
+            onSetRaceSpeed={socket.setRaceSpeed}
             onPlayAgain={socket.playAgain}
             onLeaveRoom={socket.leaveRoom}
           />

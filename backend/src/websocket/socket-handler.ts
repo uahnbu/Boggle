@@ -139,6 +139,17 @@ export function setupSocketHandlers(
       }
     });
 
+    // Synchronize race speed across all players in room
+    socket.on('room:set_race_speed', ({ speed }) => {
+      for (const room of (socket as any).rooms) {
+        const r = roomManager.getRoom(room);
+        if (r) {
+          r.setRaceSpeed(speed);
+          break;
+        }
+      }
+    });
+
     // Reconnection
     socket.on('player:reconnect', ({ roomCode, playerId }, callback) => {
       const room = roomManager.getRoom(roomCode);

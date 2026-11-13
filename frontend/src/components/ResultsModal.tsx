@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import { RoundResults, Coordinate } from '@shared/types/game';
-import { Trophy, Medal, RotateCcw, Play, Pause, FastForward, Flag, Users, Eye } from 'lucide-react';
+import { Trophy, Medal, RotateCcw, FastForward, Flag, Users, Eye } from 'lucide-react';
 import { sound } from '../audio/sound';
 import { BoardPathViewer } from './BoardPathViewer';
 
@@ -11,6 +11,8 @@ interface ResultsModalProps {
   isHost: boolean;
   onPlayAgain: () => void;
   onLeaveRoom: () => void;
+  raceSpeed?: 1 | 2 | 4;
+  onSetRaceSpeed?: (speed: 1 | 2 | 4) => void;
 }
 
 interface RaceStep {
@@ -35,6 +37,8 @@ export const ResultsModal: React.FC<ResultsModalProps> = ({
   isHost,
   onPlayAgain,
   onLeaveRoom,
+  raceSpeed: externalRaceSpeed,
+  onSetRaceSpeed,
 }) => {
   const [activeTab, setActiveTab] = useState<'race' | 'leaderboard' | 'playerWords' | 'allBoard'>('race');
   const [boardSearch, setBoardSearch] = useState('');
@@ -45,12 +49,21 @@ export const ResultsModal: React.FC<ResultsModalProps> = ({
   // --- ANIMATED RACE STATE ---
   const [raceStepIndex, setRaceStepIndex] = useState(0);
   const [isPlayingRace, setIsPlayingRace] = useState(true);
-  const [raceSpeed, setRaceSpeed] = useState<1 | 2 | 4>(1);
+  const [localRaceSpeed, setLocalRaceSpeed] = useState<1 | 2 | 4>(2);
+  const effectiveRaceSpeed = externalRaceSpeed || localRaceSpeed;
+
   const [raceScores, setRaceScores] = useState<Record<string, number>>({});
   const [raceWordsCount, setRaceWordsCount] = useState<Record<string, number>>({});
   const [currentRaceEvent, setCurrentRaceEvent] = useState<RaceStep | null>(null);
+  const [flyingPoint, setFlyingPoint] = useState<{ id: string; finderId: string; points: number } | null>(null);
+
   const raceTimerRef = useRef<any>(null);
   const hasFiredRaceFinishConfetti = useRef(false);
+
+  // Neutral player ordering throughout the race (stable, equal level, no spoiler ranking!)
+  const initialPlayerOrder = useRef(
+    [...results.playerResults].sort((a, b) => a.username.localeCompare(b.username))
+  ).current;
 
   // Modal Word Viewer for inspect/board words
   const [selectedWordForViewer, setSelectedWordForViewer] = useState<{
@@ -90,7 +103,7 @@ export const ResultsModal: React.FC<ResultsModalProps> = ({
     }
 
     // SEQUENCE REQUIREMENT:
-    // "Show similar words first (words that more people played), then show unique words per person."
+    // Show shared words first (more people played), then show unique words per person
     steps.sort((a, b) => {
       const aShared = a.findersCount > 1;
       const bShared = b.findersCount > 1;
@@ -124,7 +137,7 @@ export const ResultsModal: React.FC<ResultsModalProps> = ({
     setRaceWordsCount(initialWords);
     hasFiredRaceFinishConfetti.current = false;
 
-    // Fire gentle initial victory confetti (lightweight, single burst)
+    // Fire gentle initial victory confetti
     try {
       confetti({
         particleCount: 25,
@@ -145,7 +158,11 @@ export const ResultsModal: React.FC<ResultsModalProps> = ({
 
   const isRaceFinished = raceStepIndex >= raceSteps.length;
 
-  // Race playback loop with adjustable speed
+  // Race playback loop with synchronized adjustable speed:
+  // User requirement: "Make the current word race speed x1 be x2, x1 should be slow down a bit more."
+  // x1 = 1250ms (slower, easy to follow)
+  // x2 = 700ms  (former x1)
+  // x4 = 340ms  (fast)
   useEffect(() => {
     if (!isPlayingRace || raceSteps.length === 0) return;
 
@@ -167,11 +184,18 @@ export const ResultsModal: React.FC<ResultsModalProps> = ({
       return;
     }
 
-    const delay = raceSpeed === 4 ? 140 : raceSpeed === 2 ? 340 : 700;
+    const delay = effectiveRaceSpeed === 4 ? 340 : effectiveRaceSpeed === 2 ? 700 : 1250;
 
     raceTimerRef.current = setTimeout(() => {
       const step = raceSteps[raceStepIndex];
       setCurrentRaceEvent(step);
+
+      // Trigger animated flying point toward player's bar
+      setFlyingPoint({
+        id: `${step.finderPlayerId}-${raceStepIndex}`,
+        finderId: step.finderPlayerId,
+        points: step.points,
+      });
 
       // Increment score & word count for this player
       setRaceScores((prev) => ({
@@ -192,22 +216,7 @@ export const ResultsModal: React.FC<ResultsModalProps> = ({
     return () => {
       if (raceTimerRef.current) clearTimeout(raceTimerRef.current);
     };
-  }, [isPlayingRace, raceStepIndex, raceSteps, raceSpeed]);
-
-  const skipRace = () => {
-    setIsPlayingRace(false);
-    if (raceTimerRef.current) clearTimeout(raceTimerRef.current);
-    const finalScores: Record<string, number> = {};
-    const finalWords: Record<string, number> = {};
-    for (const p of results.playerResults) {
-      finalScores[p.playerId] = p.totalScore;
-      finalWords[p.playerId] = p.wordsFound;
-    }
-    setRaceScores(finalScores);
-    setRaceWordsCount(finalWords);
-    setRaceStepIndex(raceSteps.length);
-    setActiveTab('leaderboard');
-  };
+  }, [isPlayingRace, raceStepIndex, raceSteps, effectiveRaceSpeed]);
 
   const restartRace = () => {
     if (raceTimerRef.current) clearTimeout(raceTimerRef.current);
@@ -222,8 +231,17 @@ export const ResultsModal: React.FC<ResultsModalProps> = ({
     setRaceWordsCount(initialWords);
     setRaceStepIndex(0);
     setCurrentRaceEvent(null);
+    setFlyingPoint(null);
     setIsPlayingRace(true);
     setActiveTab('race');
+  };
+
+  const handleSpeedChange = (spd: 1 | 2 | 4) => {
+    if (onSetRaceSpeed) {
+      onSetRaceSpeed(spd);
+    } else {
+      setLocalRaceSpeed(spd);
+    }
   };
 
   const winner = results.playerResults[0];
@@ -260,7 +278,7 @@ export const ResultsModal: React.FC<ResultsModalProps> = ({
       )}
 
       <div className="bg-white/95 backdrop-blur-md rounded-3xl shadow-2xl border border-purple-100 w-full max-w-4xl my-auto overflow-hidden flex flex-col max-h-[94vh]">
-        {/* Results Header: DO NOT show winner until all words are shown! */}
+        {/* Results Header: DO NOT show winner or other tabs until race finishes! */}
         <div className="bg-gradient-to-r from-orange-100/70 via-purple-100/60 to-pink-100/50 p-4 sm:p-6 text-center border-b border-purple-100 relative">
           <div className="inline-flex items-center space-x-2 px-3.5 py-1 bg-white/90 rounded-full text-xs font-black text-purple-900 border border-purple-200 shadow-sm mb-1.5">
             <Trophy className="w-4 h-4 text-amber-500 fill-amber-400" />
@@ -284,51 +302,53 @@ export const ResultsModal: React.FC<ResultsModalProps> = ({
             </p>
           )}
 
-          {/* Tab Navigation */}
-          <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 mt-3 sm:mt-4">
-            <button
-              onClick={() => setActiveTab('race')}
-              className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs font-black transition flex items-center space-x-1.5 ${
-                activeTab === 'race'
-                  ? 'bg-gradient-to-r from-orange-500 to-purple-600 text-white shadow-md'
-                  : 'bg-white/80 text-slate-700 hover:bg-white border border-purple-100'
-              }`}
-            >
-              <Flag className="w-3.5 h-3.5 text-orange-200" />
-              <span>🏁 Word Race</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('leaderboard')}
-              className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs font-black transition ${
-                activeTab === 'leaderboard'
-                  ? 'bg-gradient-to-r from-orange-500 to-purple-600 text-white shadow-md'
-                  : 'bg-white/80 text-slate-700 hover:bg-white border border-purple-100'
-              }`}
-            >
-              Leaderboard
-            </button>
-            <button
-              onClick={() => setActiveTab('playerWords')}
-              className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs font-black transition flex items-center space-x-1.5 ${
-                activeTab === 'playerWords'
-                  ? 'bg-gradient-to-r from-orange-500 to-purple-600 text-white shadow-md'
-                  : 'bg-white/80 text-slate-700 hover:bg-white border border-purple-100'
-              }`}
-            >
-              <Users className="w-3.5 h-3.5 text-purple-400" />
-              <span>Inspect Players' Words</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('allBoard')}
-              className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs font-black transition ${
-                activeTab === 'allBoard'
-                  ? 'bg-gradient-to-r from-orange-500 to-purple-600 text-white shadow-md'
-                  : 'bg-white/80 text-slate-700 hover:bg-white border border-purple-100'
-              }`}
-            >
-              All Board Words ({results.totalPossibleWords})
-            </button>
-          </div>
+          {/* TAB NAVIGATION: HIDE LEADERBOARD, INSPECT WORDS, AND ALL BOARD WORDS UNTIL RACE FINISHES */}
+          {isRaceFinished && (
+            <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 mt-3 sm:mt-4 animate-fadeIn">
+              <button
+                onClick={() => setActiveTab('race')}
+                className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs font-black transition flex items-center space-x-1.5 ${
+                  activeTab === 'race'
+                    ? 'bg-gradient-to-r from-orange-500 to-purple-600 text-white shadow-md'
+                    : 'bg-white/80 text-slate-700 hover:bg-white border border-purple-100'
+                }`}
+              >
+                <Flag className="w-3.5 h-3.5 text-orange-200" />
+                <span>🏁 Word Race</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('leaderboard')}
+                className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs font-black transition ${
+                  activeTab === 'leaderboard'
+                    ? 'bg-gradient-to-r from-orange-500 to-purple-600 text-white shadow-md'
+                    : 'bg-white/80 text-slate-700 hover:bg-white border border-purple-100'
+                }`}
+              >
+                Leaderboard
+              </button>
+              <button
+                onClick={() => setActiveTab('playerWords')}
+                className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs font-black transition flex items-center space-x-1.5 ${
+                  activeTab === 'playerWords'
+                    ? 'bg-gradient-to-r from-orange-500 to-purple-600 text-white shadow-md'
+                    : 'bg-white/80 text-slate-700 hover:bg-white border border-purple-100'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5 text-purple-400" />
+                <span>Inspect Players' Words</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('allBoard')}
+                className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs font-black transition ${
+                  activeTab === 'allBoard'
+                    ? 'bg-gradient-to-r from-orange-500 to-purple-600 text-white shadow-md'
+                    : 'bg-white/80 text-slate-700 hover:bg-white border border-purple-100'
+                }`}
+              >
+                All Board Words ({results.totalPossibleWords})
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Modal Body */}
@@ -345,21 +365,22 @@ export const ResultsModal: React.FC<ResultsModalProps> = ({
                       <div className="text-xs font-extrabold text-slate-500">
                         <strong className="text-purple-950">{currentRaceEvent.finderName}</strong> played:
                       </div>
-                      <div className="flex items-center space-x-2 flex-wrap">
+                      <div className="flex items-center space-x-2 flex-wrap mt-0.5">
                         <span className="font-boggle font-black text-2xl sm:text-3xl text-orange-600 tracking-wider">
                           {currentRaceEvent.word}
                         </span>
                         <span className="text-xs px-2.5 py-0.5 rounded-full font-black bg-gradient-to-r from-orange-100 to-purple-100 text-purple-950 border border-purple-200">
                           +{currentRaceEvent.points} pts
                         </span>
-                        {currentRaceEvent.isUnique && (
-                          <span className="text-xs px-2.5 py-0.5 rounded-full font-black bg-rose-100 text-rose-800 border border-rose-300 animate-pulse">
-                            ⭐ UNIQUE BONUS!
+
+                        {/* DISTINCT UNIQUE VS SHARED HIGHLIGHT */}
+                        {currentRaceEvent.isUnique ? (
+                          <span className="text-xs px-3 py-1 rounded-full font-black bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-md shadow-rose-500/25 border border-white animate-pulse">
+                            ⭐ UNIQUE WORD (+{currentRaceEvent.points} pts)
                           </span>
-                        )}
-                        {!currentRaceEvent.isUnique && (
-                          <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-purple-100 text-purple-900">
-                            Shared ({currentRaceEvent.findersCount} finders)
+                        ) : (
+                          <span className="text-xs px-3 py-1 rounded-full font-extrabold bg-purple-100 text-purple-900 border border-purple-300">
+                            👥 SHARED ({currentRaceEvent.findersCount} finders)
                           </span>
                         )}
                       </div>
@@ -371,69 +392,86 @@ export const ResultsModal: React.FC<ResultsModalProps> = ({
                   </div>
                 )}
 
-                {/* Race Controls: Play/Pause, Speed 1x/2x/4x, Replay, Skip */}
+                {/* Race Controls: Synchronized Speed Selector */}
                 <div className="flex items-center space-x-2 flex-shrink-0">
-                  {/* Speed Selector */}
+                  {/* Speed Selector: Applied to all players */}
                   <div className="flex items-center space-x-1 bg-white border border-purple-200 rounded-xl p-0.5 shadow-sm">
                     {([1, 2, 4] as const).map((spd) => (
                       <button
                         key={spd}
-                        onClick={() => setRaceSpeed(spd)}
-                        className={`px-2 py-1 rounded-lg text-xs font-black transition ${
-                          raceSpeed === spd
+                        onClick={() => handleSpeedChange(spd)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-black transition ${
+                          effectiveRaceSpeed === spd
                             ? 'bg-gradient-to-r from-orange-500 to-purple-600 text-white shadow-sm'
                             : 'text-slate-600 hover:text-slate-900'
                         }`}
-                        title={`${spd}x Speed`}
+                        title={`${spd}x Speed (Synchronized)`}
                       >
                         {spd}x
                       </button>
                     ))}
                   </div>
 
-                  <button
-                    onClick={() => setIsPlayingRace(!isPlayingRace)}
-                    className="p-2 rounded-xl bg-white border border-purple-200 text-purple-900 hover:bg-purple-50 shadow-sm"
-                    title={isPlayingRace ? 'Pause' : 'Play'}
-                  >
-                    {isPlayingRace ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 fill-purple-900" />}
-                  </button>
-                  <button
-                    onClick={skipRace}
-                    className="px-3 py-2 rounded-xl bg-white border border-purple-200 text-xs font-black text-purple-900 hover:bg-purple-50 shadow-sm flex items-center space-x-1"
-                  >
-                    <FastForward className="w-3.5 h-3.5" />
-                    <span>Skip</span>
-                  </button>
-                  <button
-                    onClick={restartRace}
-                    className="p-2 rounded-xl bg-white border border-purple-200 text-purple-900 hover:bg-purple-50 shadow-sm"
-                    title="Replay Race"
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                  </button>
+                  {/* Replay button: ONLY AVAILABLE AFTER RACE FINISHES */}
+                  {isRaceFinished && (
+                    <button
+                      onClick={restartRace}
+                      className="p-2 rounded-xl bg-white border border-purple-200 text-purple-900 hover:bg-purple-50 shadow-sm transition animate-fadeIn"
+                      title="Replay Race"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </div>
 
-              {/* Race Layout: Mini Board Swipe Mimic + Player Tracks */}
+              {/* Race Layout: Letter Board in middle on mobile, side-by-side on desktop */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
-                {/* Left/Center: Player Racing Tracks */}
-                <div className="lg:col-span-2 space-y-3">
-                  {results.playerResults.map((pr) => {
+                {/* Board Swipe Playback Mimic: In the middle between top word card and bottom progress on mobile */}
+                <div className="w-full flex flex-col items-center order-1 lg:order-2 lg:col-span-1">
+                  {currentRaceEvent && (
+                    <div className="w-full">
+                      <BoardPathViewer
+                        board={results.board}
+                        path={currentRaceEvent.path}
+                        word={currentRaceEvent.word}
+                        points={currentRaceEvent.points}
+                        definition={currentRaceEvent.definition}
+                        isUnique={currentRaceEvent.isUnique}
+                        compact
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Player Racing Tracks Showing Progress: At the bottom on mobile, left 2 columns on desktop */}
+                <div className="order-2 lg:order-1 lg:col-span-2 space-y-3">
+                  {initialPlayerOrder.map((pr) => {
                     const score = raceScores[pr.playerId] || 0;
                     const wordsCount = raceWordsCount[pr.playerId] || 0;
                     const progressPct = Math.min(100, Math.round((score / maxScore) * 100));
                     const isCurrent = currentRaceEvent?.finderPlayerId === pr.playerId;
+                    const isFlyingToThis = flyingPoint?.finderId === pr.playerId;
 
                     return (
                       <div
                         key={pr.playerId}
-                        className={`p-3.5 rounded-2xl border transition-all ${
+                        className={`relative p-3.5 rounded-2xl border transition-all ${
                           isCurrent
-                            ? 'border-orange-400 bg-orange-50/40 ring-2 ring-orange-400/30 shadow-md scale-[1.01]'
+                            ? 'border-orange-400 bg-orange-50/50 ring-2 ring-orange-400/30 shadow-md scale-[1.01]'
                             : 'border-purple-100 bg-white/90 shadow-sm'
                         }`}
                       >
+                        {/* ANIMATED FLYING POINT PARTICLE */}
+                        {isFlyingToThis && (
+                          <div
+                            key={flyingPoint.id}
+                            className="absolute -top-3 right-4 px-2.5 py-0.5 rounded-full font-black text-xs bg-gradient-to-r from-amber-400 to-orange-500 text-white shadow-lg border border-white animate-fly-score pointer-events-none z-20"
+                          >
+                            +{flyingPoint.points} pts
+                          </div>
+                        )}
+
                         <div className="flex items-center justify-between text-xs font-bold text-slate-700 mb-2">
                           <div className="flex items-center space-x-2">
                             <span className="text-2xl">{pr.avatar}</span>
@@ -442,7 +480,8 @@ export const ResultsModal: React.FC<ResultsModalProps> = ({
                               <span className="text-[10px] text-orange-600 font-black uppercase">(You)</span>
                             )}
                           </div>
-                          {/* Score and Word Count both displayed and incrementing live */}
+
+                          {/* Score and Word Count both incrementing live */}
                           <div className="flex items-center space-x-2 font-boggle">
                             <span className="font-black text-lg text-slate-900">{score} pts</span>
                             <span className="text-xs px-2 py-0.5 rounded-full font-black bg-purple-100 text-purple-950 border border-purple-200">
@@ -465,32 +504,11 @@ export const ResultsModal: React.FC<ResultsModalProps> = ({
                     );
                   })}
                 </div>
-
-                {/* Right: Board Swipe Playback Mimic */}
-                <div className="w-full flex flex-col items-center">
-                  {currentRaceEvent && (
-                    <div className="w-full">
-                      <div className="text-xs font-extrabold text-purple-950 uppercase tracking-wider mb-1.5 flex items-center justify-between">
-                        <span>Board Swipe Mimic:</span>
-                        <span className="text-orange-600 font-black">{currentRaceEvent.word}</span>
-                      </div>
-                      <BoardPathViewer
-                        board={results.board}
-                        path={currentRaceEvent.path}
-                        word={currentRaceEvent.word}
-                        points={currentRaceEvent.points}
-                        definition={currentRaceEvent.definition}
-                        isUnique={currentRaceEvent.isUnique}
-                        compact
-                      />
-                    </div>
-                  )}
-                </div>
               </div>
             </div>
           )}
 
-          {/* TAB 2: FINAL LEADERBOARD */}
+          {/* TAB 2: FINAL LEADERBOARD (SORTED AFTER RACE COMPLETES) */}
           {activeTab === 'leaderboard' && (
             <div className="space-y-3">
               {results.playerResults.map((pr) => {
@@ -557,7 +575,7 @@ export const ResultsModal: React.FC<ResultsModalProps> = ({
             </div>
           )}
 
-          {/* TAB 3: SEE WHAT OTHER PLAYERS PLAYED (CLICK WORD TO MIMIC SWIPE ON BOARD) */}
+          {/* TAB 3: SEE WHAT OTHER PLAYERS PLAYED */}
           {activeTab === 'playerWords' && (
             <div className="space-y-4">
               {/* Player Selector Pills */}
@@ -656,7 +674,7 @@ export const ResultsModal: React.FC<ResultsModalProps> = ({
             </div>
           )}
 
-          {/* TAB 4: ALL BOARD WORDS (CLICK ANY WORD TO MIMIC SWIPE ON BOARD) */}
+          {/* TAB 4: ALL BOARD WORDS */}
           {activeTab === 'allBoard' && (
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-3">

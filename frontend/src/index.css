@@ -55,3 +55,27 @@
 .glow-valid {
   animation: glow-pulse 1.2s infinite;
 }
+
+/* Flying score particle animation */
+@keyframes fly-score {
+  0% {
+    opacity: 0;
+    transform: translateY(0) scale(0.6);
+  }
+  20% {
+    opacity: 1;
+    transform: translateY(-16px) scale(1.25);
+  }
+  75% {
+    opacity: 0.95;
+    transform: translateY(-32px) scale(1.1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-48px) scale(0.7);
+  }
+}
+
+.animate-fly-score {
+  animation: fly-score 0.7s ease-out forwards;
+}

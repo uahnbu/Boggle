@@ -6,6 +6,7 @@ interface TileProps {
   col: number;
   isSelected: boolean;
   orderIndex: number | null;
+  isGhostHinted?: boolean;
   onPointerDown: (row: number, col: number, e: React.PointerEvent) => void;
 }
 
@@ -15,6 +16,7 @@ export const Tile: React.FC<TileProps> = React.memo(({
   col,
   isSelected,
   orderIndex: _orderIndex,
+  isGhostHinted = false,
   onPointerDown,
 }) => {
   const isQu = letter.toUpperCase() === 'QU';
@@ -31,6 +33,8 @@ export const Tile: React.FC<TileProps> = React.memo(({
         ${
           isSelected
             ? 'bg-gradient-to-br from-[#FF6B00] via-[#FF2E93] to-[#8B5CF6] text-white shadow-xl scale-105 z-20 ring-4 ring-white/90 shadow-orange-500/50'
+            : isGhostHinted
+            ? 'bg-slate-100 text-slate-900 shadow-md ring-4 ring-slate-400/90 border border-slate-300 scale-[1.02] z-10'
             : 'bg-white/95 text-slate-800 shadow-md hover:scale-[1.03] ring-2 ring-purple-100/70 border border-white/80 hover:ring-orange-300'
         }
       `}

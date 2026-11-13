@@ -11,6 +11,7 @@ export interface ClientToServerEvents {
   'player:update_profile': (data: { avatar?: string; color?: string }) => void;
   'player:reconnect': (data: { roomCode: string; playerId: string }, callback: (response: { success: boolean; error?: string }) => void) => void;
   'game:play_again': () => void;
+  'room:set_race_speed': (data: { speed: 1 | 2 | 4 }) => void;
 }
 
 export interface ServerToClientEvents {
@@ -22,6 +23,12 @@ export interface ServerToClientEvents {
     status: RoomStatus;
     board?: Board;
     remainingSeconds?: number;
+    currentGhostHint?: {
+      wordLength: number;
+      hintLetters: string;
+      path: Coordinate[];
+      timestamp: number;
+    } | null;
   }) => void;
   'room:error': (data: { message: string }) => void;
   'game:starting': (data: { countdown: number }) => void;
@@ -52,5 +59,12 @@ export interface ServerToClientEvents {
     playerId: string;
     foundWordsCount: number;
   }) => void;
+  'game:ghost_hint': (data: {
+    wordLength: number;
+    hintLetters: string;
+    path: Coordinate[];
+    timestamp: number;
+  }) => void;
+  'room:race_speed_updated': (data: { speed: 1 | 2 | 4 }) => void;
   'game:ended': (data: { results: RoundResults }) => void;
 }

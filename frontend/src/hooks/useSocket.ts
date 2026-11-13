@@ -33,6 +33,9 @@ export function useSocket() {
   const [foundWords, setFoundWords] = useState<string[]>([]);
   const [feedEvents, setFeedEvents] = useState<FeedItem[]>([]);
   const [roundResults, setRoundResults] = useState<RoundResults | null>(null);
+  const [ghostHint, setGhostHint] = useState<{ wordLength: number; hintLetters: string; path: Coordinate[]; timestamp: number } | null>(null);
+  const [raceSpeed, setRaceSpeedState] = useState<1 | 2 | 4>(2);
+  const ghostHintTimeoutRef = useRef<any>(null);
 
   useEffect(() => {
     const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io({
@@ -73,6 +76,12 @@ export function useSocket() {
       setRoomStatus(data.status);
       if (data.board) setBoard(data.board);
       if (data.remainingSeconds !== undefined) setRemainingSeconds(data.remainingSeconds);
+      if (data.currentGhostHint !== undefined) {
+        setGhostHint(data.currentGhostHint);
+      }
+      if (data.status === 'ENDED' || data.status === 'LOBBY') {
+        setGhostHint(null);
+      }
     });
 
     socket.on('game:starting', ({ countdown }) => {
@@ -146,6 +155,16 @@ export function useSocket() {
     socket.on('game:ended', ({ results }) => {
       setRoomStatus('ENDED');
       setRoundResults(results);
+      setGhostHint(null);
+    });
+
+    socket.on('game:ghost_hint', (data) => {
+      // Keep ghost hint active until replaced by next hint or round ends
+      setGhostHint(data);
+    });
+
+    socket.on('room:race_speed_updated', ({ speed }) => {
+      setRaceSpeedState(speed);
     });
 
     return () => {
@@ -254,6 +273,12 @@ export function useSocket() {
     setRoomStatus('LOBBY');
     setFoundWords([]);
     setRoundResults(null);
+    setGhostHint(null);
+  }, []);
+
+  const setRaceSpeed = useCallback((speed: 1 | 2 | 4) => {
+    setRaceSpeedState(speed);
+    socketRef.current?.emit('room:set_race_speed', { speed });
   }, []);
 
   const isHost = playerId ? hostId === playerId : false;
@@ -275,6 +300,9 @@ export function useSocket() {
     foundWords,
     feedEvents,
     roundResults,
+    ghostHint,
+    raceSpeed,
+    setRaceSpeed,
     createRoom,
     joinRoom,
     updateProfile,

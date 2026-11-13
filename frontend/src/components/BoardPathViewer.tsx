@@ -87,67 +87,40 @@ export const BoardPathViewer: React.FC<BoardPathViewerProps> = ({
   const bubbles: { x: number; y: number; r: number }[] = [];
 
   if (visiblePath.length > 0 && boardRef.current) {
-    const boardRect = boardRef.current.getBoundingClientRect();
     for (const c of visiblePath) {
-      const tileEl = boardRef.current.querySelector(`[data-path-coord="${c.row}-${c.col}"]`);
+      const tileEl = boardRef.current.querySelector<HTMLElement>(`[data-path-coord="${c.row}-${c.col}"]`);
       if (tileEl) {
-        const rect = tileEl.getBoundingClientRect();
-        const radius = rect.width / 2;
-        bubbles.push({
-          x: rect.left + radius - boardRect.left,
-          y: rect.top + radius - boardRect.top,
-          r: radius,
-        });
+        if (tileEl.offsetParent === boardRef.current) {
+          const radius = tileEl.offsetWidth / 2;
+          bubbles.push({
+            x: tileEl.offsetLeft + radius,
+            y: tileEl.offsetTop + radius,
+            r: radius,
+          });
+        } else {
+          const boardRect = boardRef.current.getBoundingClientRect();
+          const tileRect = tileEl.getBoundingClientRect();
+          const radius = tileRect.width / 2;
+          const borderLeft = boardRef.current.clientLeft || 0;
+          const borderTop = boardRef.current.clientTop || 0;
+          bubbles.push({
+            x: tileRect.left + radius - (boardRect.left + borderLeft),
+            y: tileRect.top + radius - (boardRect.top + borderTop),
+            r: radius,
+          });
+        }
       }
     }
   }
 
   return (
     <div
-      className={`flex flex-col items-center bg-white/95 backdrop-blur-md rounded-3xl p-3.5 sm:p-5 shadow-2xl border border-purple-100 ${
+      className={`flex flex-col items-center bg-white/95 backdrop-blur-md rounded-3xl p-3 sm:p-4 shadow-2xl border border-purple-100 ${
         compact ? 'max-w-xs' : 'max-w-md'
       } mx-auto relative`}
     >
-      {/* Top Header Controls */}
-      <div className="w-full flex items-center justify-between pb-2 mb-2 border-b border-purple-100">
-        <div className="flex items-center space-x-2 flex-wrap">
-          <span className="font-boggle font-black text-xl sm:text-2xl tracking-wider bg-gradient-to-r from-orange-600 via-pink-600 to-purple-700 bg-clip-text text-transparent">
-            {word}
-          </span>
-          {points !== undefined && (
-            <span className="text-xs px-2.5 py-0.5 rounded-full font-black bg-gradient-to-r from-orange-100 to-purple-100 text-purple-950 border border-purple-200">
-              +{points} pts
-            </span>
-          )}
-          {isUnique && (
-            <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-rose-100 text-rose-800 border border-rose-300">
-              ⭐ UNIQUE
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center space-x-1.5 flex-shrink-0">
-          <button
-            onClick={() => runLetterByLetterAnimation()}
-            className="p-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 transition"
-            title="Replay letter swipe"
-          >
-            <RotateCcw className="w-4 h-4" />
-          </button>
-          {onClose && (
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 transition"
-              title="Close viewer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Board with Animated Swipe Path Overlay */}
-      <div className="relative w-full flex items-center justify-center my-1.5">
+      {/* 1. LETTER BOARD DIRECTLY ON TOP (NO BUTTONS OR TAGS ABOVE TO PREVENT JUMPING) */}
+      <div className="relative w-full flex items-center justify-center mb-2.5">
         <div
           ref={boardRef}
           className={`relative grid ${gridColsClass} gap-1.5 sm:gap-2 p-2 w-full bg-gradient-to-br from-purple-100/70 via-orange-50/50 to-purple-200/60 rounded-3xl shadow-inner border-2 border-white select-none`}
@@ -243,6 +216,44 @@ export const BoardPathViewer: React.FC<BoardPathViewerProps> = ({
                 </div>
               );
             })
+          )}
+        </div>
+      </div>
+
+      {/* 2. ALL DETAILS, TAGS, AND BUTTONS PUT UNDER THE BOARD */}
+      <div className="w-full flex items-center justify-between pt-1 border-t border-purple-100/80">
+        <div className="flex items-center space-x-2 flex-wrap">
+          <span className="font-boggle font-black text-xl sm:text-2xl tracking-wider bg-gradient-to-r from-orange-600 via-pink-600 to-purple-700 bg-clip-text text-transparent">
+            {word}
+          </span>
+          {points !== undefined && (
+            <span className="text-xs px-2.5 py-0.5 rounded-full font-black bg-gradient-to-r from-orange-100 to-purple-100 text-purple-950 border border-purple-200">
+              +{points} pts
+            </span>
+          )}
+          {isUnique && (
+            <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-rose-100 text-rose-800 border border-rose-300">
+              ⭐ UNIQUE
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center space-x-1.5 flex-shrink-0">
+          <button
+            onClick={() => runLetterByLetterAnimation()}
+            className="p-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 transition"
+            title="Replay letter swipe"
+          >
+            <RotateCcw className="w-4 h-4" />
+          </button>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 transition"
+              title="Close viewer"
+            >
+              <X className="w-4 h-4" />
+            </button>
           )}
         </div>
       </div>

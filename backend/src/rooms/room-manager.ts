@@ -28,6 +28,16 @@ export class GameRoom {
   public roundEndTime?: number;
   public timerInterval?: NodeJS.Timeout;
   public countdownTimeout?: NodeJS.Timeout;
+  public ghostHintInterval?: NodeJS.Timeout;
+  public firstGhostTimeout?: NodeJS.Timeout;
+  public ghostHintIndex: number = 0;
+  public hintedWords: Set<string> = new Set();
+  public currentGhostHint: {
+    wordLength: number;
+    hintLetters: string;
+    path: Coordinate[];
+    timestamp: number;
+  } | null = null;
 
   private dictionary: DictionaryService;
   private io: Server;
@@ -220,6 +230,62 @@ export class GameRoom {
         this.endRound();
       }
     }, 1000);
+
+    // Clear previous ghost hint timers and records
+    if (this.ghostHintInterval) clearInterval(this.ghostHintInterval);
+    if (this.firstGhostTimeout) clearTimeout(this.firstGhostTimeout);
+    this.hintedWords.clear();
+    this.currentGhostHint = null;
+
+    // Filter candidate words for ghost hint (at least minWordLength letters, sorted longest first)
+    const minHintLength = Math.max(4, this.settings.minWordLength);
+    const candidateWords = Array.from(this.solverResult.words.entries())
+      .filter(([w]) => w.length >= minHintLength)
+      .sort((a, b) => b[0].length - a[0].length);
+
+    const emitNextGhostHint = () => {
+      if (this.status !== 'PLAYING' || !this.board || candidateWords.length === 0) {
+        if (this.ghostHintInterval) clearInterval(this.ghostHintInterval);
+        return;
+      }
+
+      // Find the next longest word that hasn't been hinted yet
+      const nextWordEntry = candidateWords.find(([w]) => !this.hintedWords.has(w));
+      if (!nextWordEntry) {
+        console.log(`[GameRoom ${this.code}] All ${candidateWords.length} candidate words have been hinted this round.`);
+        return;
+      }
+
+      const [word, fullPath] = nextWordEntry;
+      this.hintedWords.add(word);
+
+      const halfLen = Math.ceil(fullPath.length / 2);
+      const hintPath = fullPath.slice(0, halfLen);
+
+      console.log(`[GameRoom ${this.code}] Emitting non-repeating ghost hint for ${word.length}-letter word "${word}": ${word.slice(0, halfLen)}...`);
+      const hintData = {
+        wordLength: word.length,
+        hintLetters: word.slice(0, halfLen),
+        path: hintPath,
+        timestamp: Date.now(),
+      };
+      this.currentGhostHint = hintData;
+      this.io.to(this.code).emit('game:ghost_hint', hintData);
+    };
+
+    // Emit initial ghost hint early (after 10s of round start)
+    this.firstGhostTimeout = setTimeout(() => {
+      emitNextGhostHint();
+    }, 10000);
+
+    // After every 30 seconds thereafter, show next non-repeating ghost trail hint
+    this.ghostHintInterval = setInterval(() => {
+      emitNextGhostHint();
+    }, 30000);
+  }
+
+  public setRaceSpeed(speed: 1 | 2 | 4): void {
+    this.io.to(this.code).emit('room:race_speed_updated', { speed });
   }
 
   public submitWord(playerId: string, word: string, path: Coordinate[]): { valid: boolean; word: string; reason?: string; letterCount?: number } {
@@ -316,6 +382,15 @@ export class GameRoom {
       clearInterval(this.timerInterval);
       this.timerInterval = undefined;
     }
+    if (this.ghostHintInterval) {
+      clearInterval(this.ghostHintInterval);
+      this.ghostHintInterval = undefined;
+    }
+    if (this.firstGhostTimeout) {
+      clearTimeout(this.firstGhostTimeout);
+      this.firstGhostTimeout = undefined;
+    }
+    this.currentGhostHint = null;
 
     if (this.status !== 'PLAYING') return;
 
@@ -365,6 +440,16 @@ export class GameRoom {
 
   public playAgain(): void {
     if (this.status !== 'ENDED') return;
+    if (this.ghostHintInterval) {
+      clearInterval(this.ghostHintInterval);
+      this.ghostHintInterval = undefined;
+    }
+    if (this.firstGhostTimeout) {
+      clearTimeout(this.firstGhostTimeout);
+      this.firstGhostTimeout = undefined;
+    }
+    this.currentGhostHint = null;
+    this.hintedWords.clear();
     this.status = 'LOBBY';
     this.board = undefined;
     this.solverResult = undefined;
@@ -395,6 +480,7 @@ export class GameRoom {
       status: this.status,
       board: this.board,
       remainingSeconds,
+      currentGhostHint: this.status === 'PLAYING' ? this.currentGhostHint : null,
     });
   }
 }
